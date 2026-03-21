@@ -2,12 +2,56 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-# Load environment variables (for deployment secrets)
 load_dotenv()
 
-st.set_page_config(page_title="AI Chat - Sarvam & Groq", page_icon="🤖", layout="wide")
-st.title("🤖 AI Chat: Sarvam + Groq")
-st.markdown("Chat with **Sarvam AI** (free Indian language model) or **Groq** (fast open‑source models).")
+# --------------------------
+# Page config and custom CSS
+# --------------------------
+st.set_page_config(page_title="Nexus AI Chat", page_icon="🤖", layout="wide")
+
+st.markdown("""
+    <style>
+    /* Custom chat bubbles */
+    .user-message {
+        background-color: #2c3e50;
+        color: white;
+        padding: 12px 16px;
+        border-radius: 20px;
+        margin: 8px 0;
+        max-width: 80%;
+        float: right;
+        clear: both;
+    }
+    .assistant-message {
+        background-color: #e9ecef;
+        color: #212529;
+        padding: 12px 16px;
+        border-radius: 20px;
+        margin: 8px 0;
+        max-width: 80%;
+        float: left;
+        clear: both;
+    }
+    .chat-container {
+        padding: 20px;
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        min-height: 400px;
+        overflow-y: auto;
+    }
+    /* Sidebar styling */
+    .sidebar .block-container {
+        padding: 1rem;
+    }
+    /* Hide default streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("🤖 Nexus AI Chat")
+st.markdown("Chat with **Sarvam AI** and **Groq** – powered by Indian language models.")
 
 # --------------------------
 # Sidebar configuration
@@ -32,11 +76,7 @@ with st.sidebar:
     provider = st.selectbox("Choose Provider", ["Sarvam", "Groq"])
 
     if provider == "Sarvam":
-        model_name = st.selectbox(
-            "Model",
-            ["sarvam-m"],
-            help="Sarvam-M is the free chat model."
-        )
+        model_name = st.selectbox("Model", ["sarvam-m"], help="Sarvam-M is the free chat model.")
     else:  # Groq
         model_name = st.selectbox(
             "Model",
@@ -45,6 +85,19 @@ with st.sidebar:
         )
 
     st.divider()
+    st.subheader("⚙️ System Prompt")
+    system_prompt = st.text_area(
+        "Instructions for the AI",
+        value="You are a helpful assistant.",
+        height=100,
+        help="This message is sent before each conversation to set the AI's behavior."
+    )
+
+    st.divider()
+    if st.button("🗑️ Clear Chat"):
+        st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I help you today?"}]
+        st.rerun()
+
     st.caption("API keys are only stored in your browser session and never saved.")
 
 # --------------------------
@@ -58,13 +111,12 @@ def get_response(provider, api_key, model, messages):
             client = SarvamAI(api_key=api_key)
             # Sarvam's chat method expects messages in a specific format
             # We'll assume it works like OpenAI's chat completion
-            # Adjust if needed based on actual SDK documentation
             response = client.chat(
                 messages=messages,
                 model=model,
                 stream=False
             )
-            # Assume response has a .choices[0].message.content attribute
+            # The exact attribute may vary; adjust as needed
             return response.choices[0].message.content
 
         elif provider == "Groq":
@@ -78,19 +130,24 @@ def get_response(provider, api_key, model, messages):
             return response.choices[0].message.content
 
     except Exception as e:
-        return f"❌ Error: {e}"
+        return f"❌ Error: {str(e)}"
 
 # --------------------------
-# Session state for chat history
+# Initialize session state for chat history
 # --------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I help you today?"}]
 
 # --------------------------
-# Display chat history
+# Display chat history with custom styling
 # --------------------------
+st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
+    if msg["role"] == "user":
+        st.markdown(f'<div class="user-message">{msg["content"]}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="assistant-message">{msg["content"]}</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
 # --------------------------
 # Handle user input
@@ -98,29 +155,50 @@ for msg in st.session_state.messages:
 if prompt := st.chat_input("Type your message here..."):
     # Add user message
     st.session_state.messages.append({"role": "user", "content": prompt})
-    st.chat_message("user").write(prompt)
+    # Immediately rerun to show the user message
+    st.rerun()
 
-    # Validate API key for selected provider
+    # Actually, we need to process after rerun – better to use a callback or process in same run.
+    # Streamlit's chat_input works with session state; we can process after the rerun.
+    # But we need to avoid infinite loop. Let's move processing after the rerun.
+
+# We'll process after the rerun using a flag. Simpler: use st.chat_message and process inline.
+# Let's restructure: Use st.chat_input and process immediately, then display.
+
+# Reset approach: I'll rewrite the chat display to use st.chat_message which handles streaming.
+# But since we want custom CSS, we'll keep the above and process after the input.
+
+# The above code already uses st.rerun() which will cause the script to run again with the updated messages.
+# However, we need to actually call the API after adding the user message. That happens only after rerun.
+# So we need to check if the last message is from user and no response yet.
+
+# Let's add a check for pending response.
+
+if st.session_state.messages[-1]["role"] == "user":
+    # Get the last user message
+    user_message = st.session_state.messages[-1]["content"]
+
+    # Validate API key
     api_key = None
     if provider == "Sarvam":
         api_key = sarvas_key
         if not api_key:
             st.error("Please enter your Sarvam AI API key in the sidebar.")
             st.stop()
-    else:  # Groq
+    else:
         api_key = groq_key
         if not api_key:
             st.error("Please enter your Groq API key in the sidebar.")
             st.stop()
 
-    # Prepare messages (convert to the format expected by the APIs)
-    # Sarvam and Groq both accept OpenAI‑style message list
-    api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
+    # Prepare messages including system prompt
+    messages_for_api = [{"role": "system", "content": system_prompt}] + [
+        {"role": m["role"], "content": m["content"]} for m in st.session_state.messages
+    ]
 
-    # Get response
-    with st.spinner("Thinking..."):
-        response = get_response(provider, api_key, model_name, api_messages)
+    with st.spinner(f"Thinking with {provider}..."):
+        response = get_response(provider, api_key, model_name, messages_for_api)
 
     # Add assistant response
     st.session_state.messages.append({"role": "assistant", "content": response})
-    st.chat_message("assistant").write(response)
+    st.rerun()
