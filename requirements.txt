@@ -1,4 +1,4 @@
 streamlit==1.31.0
-sarvamai==1.0.0
+sarvamai
 groq==0.4.0
 python-dotenv==1.0.0
